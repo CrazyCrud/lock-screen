@@ -14,7 +14,7 @@ class ImageProcessing:
             return None
         else:
             image_bgr = cv2.imread(path)
-            image_rgb = self.convert_image_to_rgb(image_bgr)
+            image_rgb = ImageProcessing.convert_image_to_rgb(image_bgr=image_bgr)
             return image_rgb
 
     def preprocess_image(self, image, visualize=False):
@@ -34,10 +34,9 @@ class ImageProcessing:
                 return image_face
 
     @staticmethod
-    def convert_image_to_rgb(self, image_bgr):
+    def convert_image_to_rgb(image_bgr):
         return cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
 
-    @staticmethod
     def _visualize(self, image_raw, face_bounding_box, image_face):
         # print("Visualize image")
         plt.subplot(131)

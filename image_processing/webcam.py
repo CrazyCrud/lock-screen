@@ -9,7 +9,10 @@ class WebcamFeed(object):
     def get_image(self, width=None, height=None):
         ret, frame = self.capture.read()
         if width is not None and height is not None:
-            frame_resized = cv2.resize(frame, width, height)
+            frame_resized = cv2.resize(frame, (width, height))
             return ImageProcessing.convert_image_to_rgb(frame_resized)
         else:
             return frame
+
+    def capture_image(self, image):
+        pass

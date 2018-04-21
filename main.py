@@ -1,4 +1,5 @@
 import os
+import time
 import wx
 import cv2
 import numpy as np
@@ -22,7 +23,6 @@ class App:
         self.window_height = window_height
 
         self.preprocessing = ImageProcessing()
-        self.webcam = WebcamFeed()
         self.model = Model()
         """Create a pretrained model"""
         self.model_nn = self.model.create_model()
@@ -32,8 +32,11 @@ class App:
     def load_image(self, path):
         return self.preprocessing.load_image(path)
 
-    def capture_image(self):
-        return self.webcam.get_image(self.window_width, self.window_height)
+    def capture_image(self, bpm_frame):
+        image_name = time.strftime('image_%H_%M_%S')
+        bpm_frame.SaveFile(definitions.ROOT_DIR + '\\resources\\Constantin_Lehenmeier\\' + image_name + '.jpg',
+                           wx.BITMAP_TYPE_JPEG)
+        print("Save image file as %s" % image_name)
 
     def preprocess_image(self, image):
         return self.preprocessing.preprocess_image(image)
@@ -54,10 +57,9 @@ class App:
         return embeded_data
 
     def train(self, identities, embeded_identities, show_accuracy=False):
-        classifier_path = definitions.ROOT_DIR + 'resources\\models\\face_classifier.pkl'
+        classifier_path = definitions.ROOT_DIR + '\\resources\\models\\face_classifier.sav'
         if os.path.exists(classifier_path) is True:
-            with open(classifier_path, 'rb') as fid:
-                self.classifier = pickle.load(fid)
+            self.classifier = pickle.load(open(classifier_path, 'rb'))
         else:
             targets = np.array([identity.name for identity in identities])
 
@@ -76,8 +78,7 @@ class App:
             self.classifier = LinearSVC()
             self.classifier.fit(data_train, labels_train)
 
-            with open(classifier_path, 'wb') as fid:
-                pickle.dump(self.classifier, fid)
+            pickle.dump(self.classifier, open(classifier_path, 'wb'))
 
             if show_accuracy is True:
                 acc_svc = accuracy_score(labels_test, self.classifier.predict(data_test))
@@ -91,34 +92,65 @@ class App:
 
 
 class AppGUI(wx.Frame):
-    def __init__(self, parent, title):
-        self.window_width = 600
-        self.window_height = 480
+    def __init__(self, parent, title, fps=15):
+        self.app_backend = None
+        self.webcam = None
+
+        self.timer = None
+        self.bmp_frame = None
+        self.fps = fps
+        self.window_width = 800
+        self.window_height = 450
         super(AppGUI, self).__init__(parent, title=title,
                                      size=(self.window_width, self.window_height))
         self.init()
-        self.initUI()
+        self.init_ui()
 
     def init(self):
-        app = App(self.window_width, self.window_height)
-        identities = app.load_identities()
-        identities_embeded = app.load_training_data(identities)
-        app.train(identities=identities, embeded_identities=identities_embeded, show_accuracy=False)
+        self.app_backend = App(self.window_width, self.window_height)
+        self.webcam = WebcamFeed()
 
-        """
-        example_image = app.load_image(
-            definitions.ROOT_DIR + '\\resources\\images\\Arnold_Schwarzenegger\\Arnold_Schwarzenegger_0009.jpg')
-        example_image = app.preprocess_image(example_image)
-        example_identity = app.predict(example_image)
-        print('Example identity:', example_identity)
-        """
+        identities = self.app_backend.load_identities()
+        identities_embeded = self.app_backend.load_training_data(identities)
+        self.app_backend.train(identities=identities, embeded_identities=identities_embeded, show_accuracy=False)
 
-    def initUI(self):
+    def init_ui(self):
+        frame = self.webcam.get_image(self.window_width, self.window_height)
+        self.bmp_frame = wx.Bitmap.FromBuffer(self.window_width, self.window_height, frame)
+
         self.Centre()
         self.Show()
+
+        self.timer = wx.Timer(self)
+        self.timer.Start(1000. // self.fps)
+        self.Bind(wx.EVT_PAINT, self.on_paint)
+        self.Bind(wx.EVT_TIMER, self.next_frame)
+
+        panel = wx.Panel(self, wx.ID_ANY)
+        button = wx.Button(panel, wx.ID_ANY, 'Take Photo', (0, 0), (100, 100))
+        button.Bind(wx.EVT_BUTTON, self.on_take_photo)
+
+    def on_paint(self, event):
+        dc = wx.BufferedPaintDC(self)
+        dc.DrawBitmap(self.bmp_frame, 0, 0)
+
+    def next_frame(self, event):
+        frame = self.webcam.get_image(self.window_width, self.window_height)
+        if frame is not None:
+            self.bmp_frame.CopyFromBuffer(frame)
+            self.Refresh()
+
+            face_image = self.app_backend.preprocess_image(frame)
+            if face_image is not None:
+                identity = self.app_backend.predict(face_image)
+                print('Identity:', identity)
+
+    def on_take_photo(self, event):
+        print("Take photo")
+        self.app_backend.capture_image(self.bmp_frame)
 
 
 if __name__ == '__main__':
     app = wx.App()
-    AppGUI(None, title='Center')
+    AppGUI(None, title='Lock Screen')
     app.MainLoop()
