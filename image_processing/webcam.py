@@ -1,4 +1,6 @@
 import cv2
+import wx
+from datetime import datetime
 from image_processing.image_processing import ImageProcessing
 
 
@@ -15,4 +17,6 @@ class WebcamFeed(object):
             return frame
 
     def capture_image(self, image):
-        pass
+        image_name = "ConstantinLehenmeier"
+        image_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        image.SaveFile("{}_{}".format(image_name, datetime))

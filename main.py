@@ -17,7 +17,7 @@ from image_processing.webcam import WebcamFeed
 # image = preprocessing.load_image(definitions.ROOT_DIR + '\\resources\\images\\image-1.jpg')
 # image_processed = preprocessing.preprocess_image(image, visualize=True)
 
-class App:
+class RecognitionSystem:
     def __init__(self, window_width, window_height):
         self.window_width = window_width
         self.window_height = window_height
@@ -91,32 +91,59 @@ class App:
         return identity
 
 
-class AppGUI(wx.Frame):
-    def __init__(self, parent, title, fps=15):
+class AppFrame(wx.Frame):
+    def __init__(self, parent, fps=15):
+        self.title = "Lock Screen"
+        self.LAYOUT_ONLY = True
+
         self.app_backend = None
         self.webcam = None
 
         self.timer = None
-        self.bmp_frame = None
+        self.bmp_frame = self.image_static = None
         self.fps = fps
         self.window_width = 800
-        self.window_height = 450
-        super(AppGUI, self).__init__(parent, title=title,
-                                     size=(self.window_width, self.window_height))
+        self.window_height = 650
+        self.image_width = 800
+        self.image_height = 450
+        super(AppFrame, self).__init__(parent, id=-1, title=self.title,
+                                       size=(self.window_width, self.window_height))
         self.init()
         self.init_ui()
 
     def init(self):
-        self.app_backend = App(self.window_width, self.window_height)
+        if self.LAYOUT_ONLY is not True:
+            self.app_backend = RecognitionSystem(self.image_width, self.image_height)
+
+            identities = self.app_backend.load_identities()
+            identities_embeded = self.app_backend.load_training_data(identities)
+            self.app_backend.train(identities=identities, embeded_identities=identities_embeded, show_accuracy=False)
         self.webcam = WebcamFeed()
 
-        identities = self.app_backend.load_identities()
-        identities_embeded = self.app_backend.load_training_data(identities)
-        self.app_backend.train(identities=identities, embeded_identities=identities_embeded, show_accuracy=False)
-
     def init_ui(self):
-        frame = self.webcam.get_image(self.window_width, self.window_height)
-        self.bmp_frame = wx.Bitmap.FromBuffer(self.window_width, self.window_height, frame)
+        panel = wx.Panel(self)
+        sizer = wx.GridBagSizer(0, 0)
+
+        image_frame = self.webcam.get_image(self.image_width, self.image_height)
+        self.bmp_frame = wx.Bitmap.FromBuffer(self.image_width, self.image_height, image_frame)
+        self.image_static = wx.StaticBitmap(panel, bitmap=self.bmp_frame, size=(self.image_width, self.image_height))
+        text_control = wx.TextCtrl(panel)
+        button_capture = wx.Button(panel, label="Capture Image")
+        button_capture.Bind(wx.EVT_BUTTON, self.on_capture)
+        button_train = wx.Button(panel, label="Train")
+        combobox = wx.ComboBox(panel, style=wx.CB_DROPDOWN)
+        button_activate = wx.ToggleButton(panel, label="Activate Lock Screen")
+        # image_placeholder = \
+        # wx.StaticText(panel, label="Image goes here...", size=(self.image_width, self.image_height))
+
+        sizer.Add(self.image_static, pos=(0, 0), span=(1, 2), flag=wx.EXPAND | wx.ALL)
+        sizer.Add(text_control, pos=(1, 0), flag=wx.ALL | wx.CENTER)
+        sizer.Add(button_capture, pos=(2, 0), flag=wx.ALL | wx.CENTER)
+        sizer.Add(combobox, pos=(1, 1), flag=wx.ALL | wx.CENTER)
+        sizer.Add(button_train, pos=(2, 1), flag=wx.ALL | wx.CENTER)
+        sizer.Add(button_activate, pos=(3, 0), span=(1, 2), flag=wx.EXPAND | wx.ALL | wx.CENTER)
+
+        panel.SetSizerAndFit(sizer)
 
         self.Centre()
         self.Show()
@@ -126,10 +153,6 @@ class AppGUI(wx.Frame):
         self.Bind(wx.EVT_PAINT, self.on_paint)
         self.Bind(wx.EVT_TIMER, self.next_frame)
 
-        panel = wx.Panel(self, wx.ID_ANY)
-        button = wx.Button(panel, wx.ID_ANY, 'Take Photo', (0, 0), (100, 100))
-        button.Bind(wx.EVT_BUTTON, self.on_take_photo)
-
     def on_paint(self, event):
         dc = wx.BufferedPaintDC(self)
         dc.DrawBitmap(self.bmp_frame, 0, 0)
@@ -138,19 +161,27 @@ class AppGUI(wx.Frame):
         frame = self.webcam.get_image(self.window_width, self.window_height)
         if frame is not None:
             self.bmp_frame.CopyFromBuffer(frame)
+            # self.image_static.SetBitmap(self.bmp_frame)
             self.Refresh()
 
-            face_image = self.app_backend.preprocess_image(frame)
-            if face_image is not None:
-                identity = self.app_backend.predict(face_image)
-                print('Identity:', identity)
+            if self.LAYOUT_ONLY is not True:
+                face_image = self.app_backend.preprocess_image(frame)
+                if face_image is not None:
+                    identity = self.app_backend.predict(face_image)
+                    print('Identity:', identity)
 
-    def on_take_photo(self, event):
+    def on_capture(self, event):
         print("Take photo")
         self.app_backend.capture_image(self.bmp_frame)
 
 
+class App(wx.App):
+    def OnInit(self):
+        app_frame = AppFrame(None)
+        app_frame.Show(True)
+        return True
+
+
 if __name__ == '__main__':
-    app = wx.App()
-    AppGUI(None, title='Lock Screen')
+    app = App()
     app.MainLoop()
