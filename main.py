@@ -2,6 +2,8 @@ import os
 import time
 import wx
 import cv2
+import re
+import pathlib
 import numpy as np
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import accuracy_score
@@ -19,6 +21,7 @@ from image_processing.webcam import WebcamFeed
 
 class RecognitionSystem:
     def __init__(self, window_width, window_height):
+        self.FORCE_TRAIN = True
         self.window_width = window_width
         self.window_height = window_height
 
@@ -32,11 +35,16 @@ class RecognitionSystem:
     def load_image(self, path):
         return self.preprocessing.load_image(path)
 
-    def capture_image(self, bpm_frame):
+    def capture_image(self, bpm_frame, file_name):
         image_name = time.strftime('image_%H_%M_%S')
-        bpm_frame.SaveFile(definitions.ROOT_DIR + '\\resources\\Constantin_Lehenmeier\\' + image_name + '.jpg',
+        file_name = re.sub('\s', '_', file_name)
+        file_dir = definitions.ROOT_DIR + '\\resources\\images\\' + file_name
+        if not os.path.isdir(file_dir):
+            pathlib.Path(file_dir).mkdir(parents=False, exist_ok=True)
+        bpm_frame.SaveFile(file_dir + '\\' + image_name + '.jpg',
                            wx.BITMAP_TYPE_JPEG)
-        print("Save image file as %s" % image_name)
+
+        print("Save image file as {}".format(file_dir + '\\' + image_name))
 
     def preprocess_image(self, image):
         return self.preprocessing.preprocess_image(image)
@@ -45,24 +53,33 @@ class RecognitionSystem:
         return self.model.load_identities(definitions.ROOT_DIR + '\\resources\\images')
 
     def load_training_data(self, idendities):
-        """Load the training data"""
+        """Load the training images and try to detect a face"""
         idendities_images = []
+        identities_mod = []
         for index, value in enumerate(idendities):
+            print("Get image path {}".format(value.get_image_path()))
             image = self.preprocessing.load_image(value.get_image_path())
+            print("Image could not be loaded: {}".format(True if image is None else False))
             image = self.preprocessing.preprocess_image(image)
-            idendities_images.append(image)
+            print("Face could not be detected: {}".format(True if image is None else False))
+            if image is not None:
+                idendities_images.append(image)
+                identities_mod.append(value)
 
         """Create the embeded vectors from the training images"""
         embeded_data = self.model.create_embeded_data_from_identities(idendities_images, self.model_nn)
-        return embeded_data
+        return np.array(identities_mod), embeded_data
 
     def train(self, identities, embeded_identities, show_accuracy=False):
         classifier_path = definitions.ROOT_DIR + '\\resources\\models\\face_classifier.sav'
-        if os.path.exists(classifier_path) is True:
+        encoder_path = definitions.ROOT_DIR + '\\resources\\models\\face_encoder.sav'
+        if os.path.exists(classifier_path) is True and os.path.exists(
+                encoder_path) is True and self.FORCE_TRAIN is False:
             self.classifier = pickle.load(open(classifier_path, 'rb'))
+            self.encoder = pickle.load(open(encoder_path, 'rb'))
         else:
             targets = np.array([identity.name for identity in identities])
-
+            print("Targets: {}".format(targets))
             self.encoder.fit(targets)
 
             targets_encoded = self.encoder.transform(targets)
@@ -79,6 +96,7 @@ class RecognitionSystem:
             self.classifier.fit(data_train, labels_train)
 
             pickle.dump(self.classifier, open(classifier_path, 'wb'))
+            pickle.dump(self.encoder, open(encoder_path, 'wb'))
 
             if show_accuracy is True:
                 acc_svc = accuracy_score(labels_test, self.classifier.predict(data_test))
@@ -94,13 +112,18 @@ class RecognitionSystem:
 class AppFrame(wx.Frame):
     def __init__(self, parent, fps=15):
         self.title = "Lock Screen"
-        self.LAYOUT_ONLY = True
+        self.LAYOUT_ONLY = False
 
         self.app_backend = None
         self.webcam = None
 
         self.timer = None
         self.bmp_frame = self.image_static = None
+        self.text_control = None
+        self.button_capture = None
+        self.button_train = None
+        self.button_activate = None
+        self.combobox = None
         self.fps = fps
         self.window_width = 800
         self.window_height = 650
@@ -116,7 +139,9 @@ class AppFrame(wx.Frame):
             self.app_backend = RecognitionSystem(self.image_width, self.image_height)
 
             identities = self.app_backend.load_identities()
-            identities_embeded = self.app_backend.load_training_data(identities)
+            print("Identities: {}".format(identities))
+            # TODO: remove elements from identities list when face is not detected in an image
+            identities, identities_embeded = self.app_backend.load_training_data(identities)
             self.app_backend.train(identities=identities, embeded_identities=identities_embeded, show_accuracy=False)
         self.webcam = WebcamFeed()
 
@@ -127,21 +152,21 @@ class AppFrame(wx.Frame):
         image_frame = self.webcam.get_image(self.image_width, self.image_height)
         self.bmp_frame = wx.Bitmap.FromBuffer(self.image_width, self.image_height, image_frame)
         self.image_static = wx.StaticBitmap(panel, bitmap=self.bmp_frame, size=(self.image_width, self.image_height))
-        text_control = wx.TextCtrl(panel)
-        button_capture = wx.Button(panel, label="Capture Image")
-        button_capture.Bind(wx.EVT_BUTTON, self.on_capture)
-        button_train = wx.Button(panel, label="Train")
-        combobox = wx.ComboBox(panel, style=wx.CB_DROPDOWN)
-        button_activate = wx.ToggleButton(panel, label="Activate Lock Screen")
+        self.text_control = wx.TextCtrl(panel)
+        self.button_capture = wx.Button(panel, label="Capture Image")
+        self.button_capture.Bind(wx.EVT_BUTTON, self.on_capture)
+        self.button_train = wx.Button(panel, label="Train")
+        self.combobox = wx.ComboBox(panel, style=wx.CB_DROPDOWN)
+        self.button_activate = wx.ToggleButton(panel, label="Activate Lock Screen")
         # image_placeholder = \
         # wx.StaticText(panel, label="Image goes here...", size=(self.image_width, self.image_height))
 
         sizer.Add(self.image_static, pos=(0, 0), span=(1, 2), flag=wx.EXPAND | wx.ALL)
-        sizer.Add(text_control, pos=(1, 0), flag=wx.ALL | wx.CENTER)
-        sizer.Add(button_capture, pos=(2, 0), flag=wx.ALL | wx.CENTER)
-        sizer.Add(combobox, pos=(1, 1), flag=wx.ALL | wx.CENTER)
-        sizer.Add(button_train, pos=(2, 1), flag=wx.ALL | wx.CENTER)
-        sizer.Add(button_activate, pos=(3, 0), span=(1, 2), flag=wx.EXPAND | wx.ALL | wx.CENTER)
+        sizer.Add(self.text_control, pos=(1, 0), flag=wx.ALL | wx.CENTER)
+        sizer.Add(self.button_capture, pos=(2, 0), flag=wx.ALL | wx.CENTER)
+        sizer.Add(self.combobox, pos=(1, 1), flag=wx.ALL | wx.CENTER)
+        sizer.Add(self.button_train, pos=(2, 1), flag=wx.ALL | wx.CENTER)
+        sizer.Add(self.button_activate, pos=(3, 0), span=(1, 2), flag=wx.EXPAND | wx.ALL | wx.CENTER)
 
         panel.SetSizerAndFit(sizer)
 
@@ -171,8 +196,10 @@ class AppFrame(wx.Frame):
                     print('Identity:', identity)
 
     def on_capture(self, event):
-        print("Take photo")
-        self.app_backend.capture_image(self.bmp_frame)
+        name = self.text_control.GetLineText(0)
+        if name:
+            name = name.strip()
+            self.app_backend.capture_image(self.bmp_frame, name)
 
 
 class App(wx.App):

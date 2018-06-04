@@ -15,8 +15,3 @@ class WebcamFeed(object):
             return ImageProcessing.convert_image_to_rgb(frame_resized)
         else:
             return frame
-
-    def capture_image(self, image):
-        image_name = "ConstantinLehenmeier"
-        image_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        image.SaveFile("{}_{}".format(image_name, datetime))
