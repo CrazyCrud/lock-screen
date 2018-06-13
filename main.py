@@ -9,6 +9,7 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import accuracy_score
 from sklearn.svm import LinearSVC
 import pickle
+from glob import glob
 
 import definitions
 from classifing.image_classifing import Model
@@ -37,10 +38,12 @@ class RecognitionSystem:
 
     def capture_image(self, bpm_frame, file_name):
         image_name = time.strftime('image_%H_%M_%S')
+        file_name = file_name.strip()
         file_name = re.sub('\s', '_', file_name)
         file_dir = definitions.ROOT_DIR + '\\resources\\images\\' + file_name
         if not os.path.isdir(file_dir):
             pathlib.Path(file_dir).mkdir(parents=False, exist_ok=True)
+            # TODO: scan folders for list in combobox or just add it
         bpm_frame.SaveFile(file_dir + '\\' + image_name + '.jpg',
                            wx.BITMAP_TYPE_JPEG)
 
@@ -112,7 +115,7 @@ class RecognitionSystem:
 class AppFrame(wx.Frame):
     def __init__(self, parent, fps=15):
         self.title = "Lock Screen"
-        self.LAYOUT_ONLY = False
+        self.LAYOUT_ONLY = True
 
         self.app_backend = None
         self.webcam = None
@@ -124,11 +127,13 @@ class AppFrame(wx.Frame):
         self.button_train = None
         self.button_activate = None
         self.combobox = None
+
         self.fps = fps
         self.window_width = 800
         self.window_height = 650
         self.image_width = 800
         self.image_height = 450
+        self.training_folders = []
         super(AppFrame, self).__init__(parent, id=-1, title=self.title,
                                        size=(self.window_width, self.window_height))
         self.init()
@@ -140,7 +145,6 @@ class AppFrame(wx.Frame):
 
             identities = self.app_backend.load_identities()
             print("Identities: {}".format(identities))
-            # TODO: remove elements from identities list when face is not detected in an image
             identities, identities_embeded = self.app_backend.load_training_data(identities)
             self.app_backend.train(identities=identities, embeded_identities=identities_embeded, show_accuracy=False)
         self.webcam = WebcamFeed()
@@ -156,7 +160,10 @@ class AppFrame(wx.Frame):
         self.button_capture = wx.Button(panel, label="Capture Image")
         self.button_capture.Bind(wx.EVT_BUTTON, self.on_capture)
         self.button_train = wx.Button(panel, label="Train")
-        self.combobox = wx.ComboBox(panel, style=wx.CB_DROPDOWN)
+
+        self.scan_train_folder()
+        self.combobox = wx.ComboBox(panel, value=self.training_folders[0], choices=self.training_folders, style=wx.CB_DROPDOWN)
+
         self.button_activate = wx.ToggleButton(panel, label="Activate Lock Screen")
         # image_placeholder = \
         # wx.StaticText(panel, label="Image goes here...", size=(self.image_width, self.image_height))
@@ -178,6 +185,19 @@ class AppFrame(wx.Frame):
         self.Bind(wx.EVT_PAINT, self.on_paint)
         self.Bind(wx.EVT_TIMER, self.next_frame)
 
+    def scan_train_folder(self):
+        root_folder = definitions.ROOT_DIR + '\\resources\\images\\'
+        sub_folders = [x[0] for x in os.walk(root_folder)]
+        sub_folders = sub_folders[1:]
+        sub_folders = list(map(lambda x: self.get_person_name_from_folder(x), sub_folders))
+        self.training_folders = sub_folders
+        print("Sub folders of {}: \n{}".format(root_folder, sub_folders))
+
+    def get_person_name_from_folder(self, absolute_path):
+        absolute_path = re.sub(r"\s+", "", absolute_path, flags=re.UNICODE)  # hack because whitespace in path
+        person_name = absolute_path[absolute_path.rfind('\\') + 1:]
+        return person_name
+
     def on_paint(self, event):
         dc = wx.BufferedPaintDC(self)
         dc.DrawBitmap(self.bmp_frame, 0, 0)
@@ -198,7 +218,6 @@ class AppFrame(wx.Frame):
     def on_capture(self, event):
         name = self.text_control.GetLineText(0)
         if name:
-            name = name.strip()
             self.app_backend.capture_image(self.bmp_frame, name)
 
 
