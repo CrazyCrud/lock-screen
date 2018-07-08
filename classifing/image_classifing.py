@@ -20,6 +20,7 @@ class Model:
             return self._create_model_raw()
 
     def create_embeded_data_from_identities(self, idendity_images, model):
+        print("Identity images: {}".format(len(idendity_images)))
         idendity_images = np.array(idendity_images)
         embeded_data = np.zeros((idendity_images.shape[0], 128))
 
@@ -36,6 +37,9 @@ class Model:
 
     def load_identities(self, path):
         return self.identity_data.load_identities(path)
+
+    def load_identity(self, path):
+        return self.identity_data.load_identity(path)
 
     def _create_model_pretrained(self):
         nn4_small2_pretrained = create_model()

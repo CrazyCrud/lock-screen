@@ -52,8 +52,11 @@ class RecognitionSystem:
     def preprocess_image(self, image):
         return self.preprocessing.preprocess_image(image)
 
-    def load_identities(self):
+    def load_identities(self, ):
         return self.model.load_identities(definitions.ROOT_DIR + '\\resources\\images')
+
+    def load_identity(self, sub_folder):
+        return self.model.load_identity(definitions.ROOT_DIR + '\\resources\\images\\' + sub_folder)
 
     def load_training_data(self, idendities):
         """Load the training images and try to detect a face"""
@@ -88,7 +91,6 @@ class RecognitionSystem:
             targets_encoded = self.encoder.transform(targets)
             train_idx = np.arange(identities.shape[0]) % 2 != 0
             test_idx = np.arange(identities.shape[0]) % 2 == 0
-
             data_train = embeded_identities[train_idx]
             data_test = embeded_identities[test_idx]
 
@@ -96,6 +98,11 @@ class RecognitionSystem:
             labels_test = targets_encoded[test_idx]
 
             self.classifier = LinearSVC()
+
+            if int(np.sum(labels_train)) in [0, labels_train.size]:
+                print("Only one class...")
+                return
+
             self.classifier.fit(data_train, labels_train)
 
             pickle.dump(self.classifier, open(classifier_path, 'wb'))
@@ -115,7 +122,7 @@ class RecognitionSystem:
 class AppFrame(wx.Frame):
     def __init__(self, parent, fps=15):
         self.title = "Lock Screen"
-        self.LAYOUT_ONLY = True
+        self.LAYOUT_ONLY = False  # just to test layout without face recognition
 
         self.app_backend = None
         self.webcam = None
@@ -143,9 +150,11 @@ class AppFrame(wx.Frame):
         if self.LAYOUT_ONLY is not True:
             self.app_backend = RecognitionSystem(self.image_width, self.image_height)
 
-            identities = self.app_backend.load_identities()
-            print("Identities: {}".format(identities))
+            # identities = self.app_backend.load_identities()  # paths to images
+            identities = self.app_backend.load_identity('Constantin_Lehenmeier')  # paths to single image folder
             identities, identities_embeded = self.app_backend.load_training_data(identities)
+            print("Identities: {}".format(identities))
+            print("Embedded identities: {}".format(identities_embeded))
             self.app_backend.train(identities=identities, embeded_identities=identities_embeded, show_accuracy=False)
         self.webcam = WebcamFeed()
 
@@ -160,9 +169,11 @@ class AppFrame(wx.Frame):
         self.button_capture = wx.Button(panel, label="Capture Image")
         self.button_capture.Bind(wx.EVT_BUTTON, self.on_capture)
         self.button_train = wx.Button(panel, label="Train")
+        self.button_train.Bind(wx.EVT_BUTTON, self.on_train)
 
-        self.scan_train_folder()
-        self.combobox = wx.ComboBox(panel, value=self.training_folders[0], choices=self.training_folders, style=wx.CB_DROPDOWN)
+        self.scan_train_folder()  # scan folder of images
+        self.combobox = wx.ComboBox(panel, value=self.training_folders[0], choices=self.training_folders,
+                                    style=wx.CB_DROPDOWN)
 
         self.button_activate = wx.ToggleButton(panel, label="Activate Lock Screen")
         # image_placeholder = \
@@ -219,6 +230,10 @@ class AppFrame(wx.Frame):
         name = self.text_control.GetLineText(0)
         if name:
             self.app_backend.capture_image(self.bmp_frame, name)
+
+    def on_train(self, event):
+        print("Train on images...")
+        person_name = self.combobox.GetStringSelection()
 
 
 class App(wx.App):
